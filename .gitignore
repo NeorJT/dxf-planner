@@ -1,0 +1,78 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Entorno virtual
+venv/
+env/
+.venv/
+ENV/
+
+# Archivos de configuración local
+*.local
+.env
+.env.local
+
+# Logs
+*.log
+logs/
+
+# Archivos temporales
+tmp/
+tmp_*/
+*.tmp
+*.temp
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Error reports y datos del sistema
+ErrorReports/
+
+# Archivos de debug
+debug_request.txt
+debug_*.txt
+
+# Binarios compilados (DLL, OBJ, LIB, EXP)
+*.dll
+*.obj
+*.lib
+*.exp
+
+# Artefactos de compilación
+*.pdb
+*.ilk
+*.idb
+*.manifest
+
+# Archivos de logs de pathfinding
+pathfinding.log
+
+# Skills de Claude Code (opcional - si no quieres compartir)
+.agents/
+skills-lock.json
+
+# Documentación generada (opcional - si no quieres compartir)
+docs/
+MEMORY.md
+start.bat
+cf-worker/
+
+
+
+
