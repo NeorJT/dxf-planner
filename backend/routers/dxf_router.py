@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from typing import List, Dict, Optional, Any
 import ezdxf
 from ezdxf.enums import TextEntityAlignment
+from ezdxf.lldxf.const import DXFStructureError
 
 from dxf_parser_ezdxf import (
     parse_dxf_to_render_data,
@@ -370,6 +371,78 @@ def remove_file(path: str):
         pass
 
 
+def _repair_missing_lwpolyline_subclasses(source_path: Path, repaired_path: Path) -> int:
+    """Insert missing AcDbPolyline subclass markers in malformed LWPOLYLINE entities."""
+    data = source_path.read_bytes()
+    newline = "\r\n" if b"\r\n" in data else "\n"
+    lines = data.decode("utf-8", errors="surrogateescape").splitlines()
+    out: list[str] = []
+    repairs = 0
+    i = 0
+
+    while i + 1 < len(lines):
+        code = lines[i].strip()
+        value = lines[i + 1].strip().upper()
+
+        if code == "0" and value == "LWPOLYLINE":
+            start = i
+            i += 2
+            while i + 1 < len(lines) and lines[i].strip() != "0":
+                i += 2
+
+            entity = lines[start:i]
+            has_polyline_subclass = any(
+                entity[j].strip() == "100" and entity[j + 1].strip() == "AcDbPolyline"
+                for j in range(0, len(entity) - 1, 2)
+            )
+
+            if not has_polyline_subclass:
+                polyline_specific_codes = {
+                    "90", "70", "43", "38", "39",
+                    "10", "20", "40", "41", "42", "91",
+                    "210", "220", "230",
+                }
+                insert_at = len(entity)
+                for j in range(2, len(entity) - 1, 2):
+                    if entity[j].strip() in polyline_specific_codes:
+                        insert_at = j
+                        break
+                entity[insert_at:insert_at] = ["100", "AcDbPolyline"]
+                repairs += 1
+
+            out.extend(entity)
+            continue
+
+        out.extend((lines[i], lines[i + 1]))
+        i += 2
+
+    if i < len(lines):
+        out.append(lines[i])
+
+    repaired_data = (newline.join(out) + newline).encode(
+        "utf-8",
+        errors="surrogateescape",
+    )
+    repaired_path.write_bytes(repaired_data)
+    return repairs
+
+
+def _read_dxf_for_export(original_path: Path):
+    try:
+        return ezdxf.readfile(str(original_path)), None
+    except DXFStructureError as exc:
+        if "missing 'AcDbPolyline' subclass" not in str(exc):
+            raise
+
+        repaired_path = _tmp_root() / f"repaired_{uuid.uuid4().hex}.dxf"
+        repairs = _repair_missing_lwpolyline_subclasses(original_path, repaired_path)
+        if repairs == 0:
+            remove_file(str(repaired_path))
+            raise
+
+        return ezdxf.readfile(str(repaired_path)), repaired_path
+
+
 @router.post("/export")
 async def export_dxf(req: DXFExportRequest, background_tasks: BackgroundTasks):
     plan_id = req.plan_id
@@ -383,9 +456,11 @@ async def export_dxf(req: DXFExportRequest, background_tasks: BackgroundTasks):
     
     try:
         # Cargar el DXF original en ezdxf
-        doc = await asyncio.get_event_loop().run_in_executor(
-            None, ezdxf.readfile, str(original_path)
+        doc, repaired_path = await asyncio.get_event_loop().run_in_executor(
+            None, _read_dxf_for_export, original_path
         )
+        if repaired_path:
+            background_tasks.add_task(remove_file, str(repaired_path))
         msp = doc.modelspace()
         
         # Calcular escala adaptativa para los waypoints y zonas
